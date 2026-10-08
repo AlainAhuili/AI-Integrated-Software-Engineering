@@ -12,9 +12,21 @@
     "start": "node --env-file-if-exists=.env src/server.js",
     "dev": "node --env-file-if-exists=.env --watch src/server.js",
     "create-agency": "node --env-file-if-exists=.env scripts/create-agency.js",
-    "test": "node --test"
+    "lint": "eslint .",
+    "test": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-lines=85 'test/**/*.test.js'",
+    "commit-stage": "npm run lint && npm test",
+    "test:acceptance": "node --test --test-concurrency=4 'acceptance/specs/**/*.spec.js'",
+    "test:smoke": "node --test 'acceptance/smoke/**/*.spec.js'",
+    "acceptance-stage": "node scripts/run-acceptance-stage.js",
+    "google-stub": "node acceptance/stubs/google-places-stub.js"
   },
   "dependencies": {
     "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^16.5.0",
+    "playwright": "^1.56.1"
   }
 }

@@ -101,7 +101,7 @@ describe('GooglePlacesClient', () => {
         { status: 200 },
       );
     };
-    const place = await new GooglePlacesClient('KEY', fakeFetch).getPlace('ChIJ123');
+    const place = await new GooglePlacesClient('KEY', { fetchImpl: fakeFetch }).getPlace('ChIJ123');
 
     assert.match(request.url, /^https:\/\/places\.googleapis\.com\/v1\/places\/ChIJ123\?languageCode=en$/);
     assert.equal(request.init.headers['X-Goog-Api-Key'], 'KEY');
@@ -122,7 +122,7 @@ describe('GooglePlacesClient', () => {
 
   it('surfaces API errors with the status code', async () => {
     const fakeFetch = async () => new Response('denied', { status: 403 });
-    await assert.rejects(new GooglePlacesClient('KEY', fakeFetch).getPlace('x'), (err) => err.status === 403);
+    await assert.rejects(new GooglePlacesClient('KEY', { fetchImpl: fakeFetch }).getPlace('x'), (err) => err.status === 403);
   });
 
   it('handles places with no reviews', () => {

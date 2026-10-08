@@ -1,0 +1,132 @@
+# Deployment pipeline, after Dave Farley's Continuous Delivery model.
+#
+#   Commit stage      fast feedback (< 5 min): lint, unit/component tests, coverage
+#                     gate, dependency audit; builds the release candidate ONCE.
+#   Acceptance stage  deploys that exact release candidate into a production-like
+#                     environment and runs smoke tests + executable specifications.
+#   Release stage     promotes the same, unchanged release candidate to the registry.
+#
+# Every commit to main that passes all stages is releasable.
+# See docs/deployment-pipeline.md.
+
+name: Deployment pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: reputation-widget:${{ github.sha }}
+
+jobs:
+  commit-stage:
+    name: Commit stage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit and component tests (coverage gate)
+        run: npm test
+
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Build release candidate
+        run: docker build --build-arg APP_VERSION=${{ github.sha }} -t "$IMAGE" .
+
+      - name: Store release candidate
+        run: docker save "$IMAGE" | gzip > release-candidate.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate
+          path: release-candidate.tar.gz
+          retention-days: 7
+
+  acceptance-stage:
+    name: Acceptance stage
+    needs: commit-stage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Install browser for acceptance tests
+        run: npx playwright install --with-deps chromium
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+
+      - name: Load release candidate
+        run: gunzip -c release-candidate.tar.gz | docker load
+
+      - name: Deploy release candidate and run acceptance tests
+        env:
+          EXPECTED_VERSION: ${{ github.sha }}
+        run: npm run acceptance-stage
+
+  release-stage:
+    name: Release stage
+    needs: acceptance-stage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+
+      - name: Load release candidate
+        run: gunzip -c release-candidate.tar.gz | docker load
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote release candidate to the registry
+        run: |
+          REGISTRY_IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/reputation-widget"
+          for tag in "${{ github.sha }}" latest; do
+            docker tag "$IMAGE" "$REGISTRY_IMAGE:$tag"
+            docker push "$REGISTRY_IMAGE:$tag"
+          done
+          {
+            echo "### Released \`$REGISTRY_IMAGE:${{ github.sha }}\`"
+            echo
+            echo "This exact image passed the commit and acceptance stages."
+          } >> "$GITHUB_STEP_SUMMARY"

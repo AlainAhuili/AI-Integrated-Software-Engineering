@@ -1,4 +1,5 @@
 import express from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { writeReviewUrl } from './google.js';
 import { selectReviews } from './reviews.js';
@@ -16,6 +17,17 @@ function publicBranding(branding) {
   };
 }
 
+function bearerToken(req) {
+  const match = /^Bearer (.+)$/.exec(req.get('Authorization') || '');
+  return match ? match[1].trim() : '';
+}
+
+function safeEqual(a, b) {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
 function publicAgency(agency) {
   return { id: agency.id, name: agency.name, branding: agency.branding };
 }
@@ -24,12 +36,18 @@ function publicAgency(agency) {
  * @param {object} deps
  * @param {import('./store.js').Store} deps.store
  * @param {import('./reviews.js').ReviewService} deps.reviews
- * @param {{ publicUrl: string, demoMode: boolean }} deps.config
+ * @param {{ publicUrl: string, demoMode: boolean, version?: string, operatorApiKey?: string }} deps.config
  */
 export function createApp({ store, reviews, config }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '20kb' }));
+
+  // Used by the deployment pipeline's smoke tests and by load balancers.
+  app.get('/healthz', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ status: 'ok', version: config.version || 'dev', demoMode: config.demoMode });
+  });
 
   // ---- Public, embeddable endpoints -------------------------------------
 
@@ -87,8 +105,8 @@ export function createApp({ store, reviews, config }) {
   const admin = express.Router();
 
   admin.use((req, res, next) => {
-    const match = /^Bearer (.+)$/.exec(req.get('Authorization') || '');
-    const agency = match && store.findAgencyByApiKey(match[1].trim());
+    const token = bearerToken(req);
+    const agency = token && store.findAgencyByApiKey(token);
     if (!agency) return res.status(401).json({ error: 'Invalid or missing API key' });
     req.agency = agency;
     next();
@@ -164,6 +182,30 @@ export function createApp({ store, reviews, config }) {
   });
 
   app.use('/api/admin', admin);
+
+  // ---- Platform operator API ---------------------------------------------
+  // Provisions agencies (e.g. when reselling). Disabled unless OPERATOR_API_KEY is set.
+
+  const operator = express.Router();
+
+  operator.use((req, res, next) => {
+    const token = bearerToken(req);
+    if (!config.operatorApiKey || !token || !safeEqual(token, config.operatorApiKey)) {
+      return res.status(401).json({ error: 'Invalid or missing operator key' });
+    }
+    next();
+  });
+
+  operator.post('/agencies', (req, res) => {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    if (!name || name.length > 100) {
+      return res.status(400).json({ error: 'name is required (max 100 characters)' });
+    }
+    const { agency, apiKey } = store.createAgency(name);
+    res.status(201).json({ agency: publicAgency(agency), apiKey });
+  });
+
+  app.use('/api/operator', operator);
 
   // ---- Static assets (widget.js, admin UI, demo page) --------------------
 

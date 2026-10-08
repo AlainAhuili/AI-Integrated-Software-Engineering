@@ -1,5 +1,3 @@
-const PLACES_BASE = 'https://places.googleapis.com/v1';
-
 const DETAILS_FIELDS = 'id,displayName,formattedAddress,rating,userRatingCount,googleMapsUri,reviews';
 const SEARCH_FIELDS =
   'places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount';
@@ -35,13 +33,14 @@ export function normalizePlace(place) {
 }
 
 export class GooglePlacesClient {
-  constructor(apiKey, fetchImpl = fetch) {
+  constructor(apiKey, { baseUrl = 'https://places.googleapis.com/v1', fetchImpl = fetch } = {}) {
     this.apiKey = apiKey;
+    this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.fetch = fetchImpl;
   }
 
   async #request(path, { method = 'GET', fieldMask, body } = {}) {
-    const res = await this.fetch(`${PLACES_BASE}${path}`, {
+    const res = await this.fetch(`${this.baseUrl}${path}`, {
       method,
       headers: {
         'X-Goog-Api-Key': this.apiKey,

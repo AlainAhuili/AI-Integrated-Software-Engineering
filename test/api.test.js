@@ -17,7 +17,7 @@ describe('HTTP API', () => {
     ({ apiKey } = store.createAgency('Acme Local'));
     ({ apiKey: otherKey } = store.createAgency('Rival Agency'));
     const reviews = new ReviewService(new DemoPlacesClient());
-    const app = createApp({ store, reviews, config: { publicUrl: 'https://widgets.example', demoMode: true } });
+    const app = createApp({ store, reviews, config: { publicUrl: 'https://widgets.example', demoMode: true, version: '1.2.3', operatorApiKey: 'op_secret' } });
     server = app.listen(0);
     await new Promise((resolve) => server.once('listening', resolve));
     baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -132,8 +132,55 @@ describe('HTTP API', () => {
     assert.equal((await call(`/api/public/widgets/${widget.id}`, { key: null })).status, 404);
   });
 
+  it('reports health and the running version', async () => {
+    const res = await call('/healthz', { key: null });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { status: 'ok', version: '1.2.3', demoMode: true });
+  });
+
+  it('lets the operator provision an agency that can then sign in', async () => {
+    const res = await call('/api/operator/agencies', { key: 'op_secret', method: 'POST', body: { name: 'New Agency' } });
+    assert.equal(res.status, 201);
+    const { agency, apiKey: newKey } = await res.json();
+    assert.equal(agency.name, 'New Agency');
+    assert.equal(agency.apiKeyHash, undefined, 'does not expose the key hash');
+    const me = await (await call('/api/admin/me', { key: newKey })).json();
+    assert.equal(me.agency.id, agency.id);
+  });
+
+  it('rejects operator requests without the operator key', async () => {
+    for (const key of [null, 'wrong', apiKey]) {
+      const res = await call('/api/operator/agencies', { key, method: 'POST', body: { name: 'X' } });
+      assert.equal(res.status, 401);
+    }
+    const bad = await call('/api/operator/agencies', { key: 'op_secret', method: 'POST', body: { name: '' } });
+    assert.equal(bad.status, 400);
+  });
+
   it('searches places', async () => {
     const data = await (await call('/api/admin/places/search?q=Smile%20Dental')).json();
     assert.equal(data.places[0].name, 'Smile Dental');
+  });
+});
+
+describe('HTTP API without an operator key', () => {
+  it('disables the operator API', async () => {
+    const app = createApp({
+      store: new Store(null),
+      reviews: new ReviewService(new DemoPlacesClient()),
+      config: { publicUrl: 'http://x', demoMode: true },
+    });
+    const server = app.listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.address().port}/api/operator/agencies`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ', 'Content-Type': 'application/json' },
+        body: '{"name":"X"}',
+      });
+      assert.equal(res.status, 401);
+    } finally {
+      server.close();
+    }
   });
 });

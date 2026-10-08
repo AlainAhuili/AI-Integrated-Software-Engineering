@@ -66,12 +66,16 @@ For single-page apps, you can mount a widget manually with `window.ReviewWidget.
 | `PUBLIC_URL` | `http://localhost:$PORT` | Public base URL used in embed codes and review links |
 | `GOOGLE_PLACES_API_KEY` | (empty) | Places API (New) key. If empty, the app runs in demo mode |
 | `CACHE_TTL_SECONDS` | `3600` | How long reviews are cached in memory |
+| `OPERATOR_API_KEY` | (empty) | Turns on `POST /api/operator/agencies` for provisioning agencies. When set, no first agency is created automatically |
+| `GOOGLE_PLACES_BASE_URL` | Google's API | Override for the Places API endpoint (the acceptance tests point it at a stub) |
+| `APP_VERSION` | `dev` | Build version reported by `/healthz` (set automatically in the Docker image) |
 | `DATA_FILE` | `data/db.json` | JSON file that stores agencies and widgets |
 
 ## API
 
 Public endpoints (no authentication, CORS open):
 
+- `GET /healthz`: health status and the running version
 - `GET /widget.js`: the embed script
 - `GET /api/public/widgets/:id`: widget settings, branding, place summary and filtered reviews
 - `GET /r/:id`: redirects to the Google review form
@@ -85,9 +89,17 @@ Admin endpoints (send `Authorization: Bearer <api key>`):
 - `PATCH | DELETE /api/admin/widgets/:id`
 - `POST /api/admin/widgets/:id/refresh`: clears the cached reviews for this widget's place
 
+Operator endpoint (send `Authorization: Bearer <OPERATOR_API_KEY>`):
+
+- `POST /api/operator/agencies` with `{"name": "..."}`: creates an agency and returns its API key
+
 ## Project layout
 
 ```
+.github/workflows/pipeline.yml   deployment pipeline (commit, acceptance and release stages)
+Dockerfile                       release candidate image
+acceptance/      acceptance tests: specs, DSL, protocol drivers, Google stub, smoke tests
+docs/            deployment pipeline guide
 src/
   server.js      entry point
   app.js         Express routes
@@ -103,11 +115,17 @@ public/
 test/            node:test suites
 ```
 
-## Tests
+## Development and the deployment pipeline
 
-```bash
-npm test
-```
+This project follows Dave Farley's Continuous Delivery approach. Every commit to `main` goes through a deployment pipeline. A commit that passes all stages is releasable. Read **[docs/deployment-pipeline.md](docs/deployment-pipeline.md)** for the full guide.
+
+| Stage | Run it locally | What it does |
+| --- | --- | --- |
+| Commit | `npm run commit-stage` | Lint, unit and component tests with an 85% coverage gate. CI also runs a dependency audit and builds the release candidate image once |
+| Acceptance | `npm run acceptance-stage` | Deploys the app with Google stubbed out, then runs smoke tests and executable specifications through the API and a real browser. Set `IMAGE=<tag>` to test a Docker image |
+| Release | CI only, on `main` | Pushes the exact tested image to `ghcr.io/<owner>/reputation-widget` |
+
+To run acceptance tests on your machine, install Chromium once with `npx playwright install chromium`.
 
 ## Roadmap ideas
 

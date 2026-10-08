@@ -8,10 +8,12 @@ import { Store } from './store.js';
 const config = loadConfig();
 const demoMode = !config.googleApiKey;
 const store = new Store(config.dataFile);
-const client = demoMode ? new DemoPlacesClient() : new GooglePlacesClient(config.googleApiKey);
+const client = demoMode ? new DemoPlacesClient() : new GooglePlacesClient(config.googleApiKey, { baseUrl: config.googlePlacesBaseUrl });
 const reviews = new ReviewService(client, { ttlSeconds: config.cacheTtlSeconds });
 
-if (store.agencyCount() === 0) {
+// Single-agency installs get a first agency automatically. With an operator key,
+// agencies are provisioned through POST /api/operator/agencies instead.
+if (store.agencyCount() === 0 && !config.operatorApiKey) {
   const { apiKey } = store.createAgency('My Agency');
   console.log('\nCreated your first agency. Admin API key (save it, it is shown only once):');
   console.log(`  ${apiKey}\n`);
@@ -20,7 +22,7 @@ if (store.agencyCount() === 0) {
 const app = createApp({ store, reviews, config: { ...config, demoMode } });
 
 app.listen(config.port, () => {
-  console.log(`Reputation widget server running at ${config.publicUrl}`);
+  console.log(`Reputation widget ${config.version} running at ${config.publicUrl}`);
   console.log(`  Admin dashboard: ${config.publicUrl}/admin/`);
   if (demoMode) console.log('  Demo mode: GOOGLE_PLACES_API_KEY is not set, serving sample reviews.');
 });
