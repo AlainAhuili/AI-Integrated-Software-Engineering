@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Review Widgets · Agency Dashboard</title>
+    <link rel="stylesheet" href="admin.css" />
+  </head>
+  <body>
+    <section id="login" class="login card" hidden>
+      <h1>Agency dashboard</h1>
+      <p class="muted">Sign in with the admin API key printed when your agency was created.</p>
+      <form id="login-form">
+        <label>API key <input id="api-key" type="password" autocomplete="off" required placeholder="rk_…" /></label>
+        <button type="submit">Sign in</button>
+        <p id="login-error" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <div id="app" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <img id="brand-logo" alt="" hidden />
+          <strong id="agency-name"></strong>
+          <span id="demo-badge" class="pill" hidden title="No Google API key configured">Demo mode</span>
+        </div>
+        <button id="logout" class="ghost">Sign out</button>
+      </header>
+
+      <main>
+        <section class="card">
+          <div class="section-head">
+            <h2>Widgets</h2>
+            <button id="new-widget">+ New widget</button>
+          </div>
+          <p id="no-widgets" class="muted" hidden>No widgets yet. Create one for each client location.</p>
+          <ul id="widget-list" class="widget-list"></ul>
+        </section>
+
+        <section id="editor" class="card" hidden>
+          <div class="section-head">
+            <h2 id="editor-title">New widget</h2>
+            <button id="close-editor" class="ghost">Close</button>
+          </div>
+
+          <form id="widget-form" class="grid-form">
+            <label class="span-2">Name (internal)
+              <input name="name" maxlength="100" placeholder="e.g. Sunrise Dental – Main St" />
+            </label>
+
+            <div class="span-2 place-picker">
+              <label>Find the business on Google
+                <span class="row">
+                  <input id="place-query" placeholder="Business name and city" />
+                  <button type="button" id="place-search" class="ghost">Search</button>
+                </span>
+              </label>
+              <ul id="place-results" class="place-results"></ul>
+              <label>Place ID
+                <input name="placeId" required maxlength="300" placeholder="ChIJ…" />
+              </label>
+            </div>
+
+            <label>Layout
+              <select name="layout">
+                <option value="grid">Grid</option>
+                <option value="carousel">Carousel</option>
+                <option value="list">List</option>
+                <option value="badge">Floating badge</option>
+              </select>
+            </label>
+            <label>Theme
+              <select name="theme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="auto">Match visitor's system</option>
+              </select>
+            </label>
+            <label>Minimum stars shown
+              <select name="minRating">
+                <option value="1">1★ and up (all)</option>
+                <option value="2">2★ and up</option>
+                <option value="3">3★ and up</option>
+                <option value="4">4★ and up</option>
+                <option value="5">5★ only</option>
+              </select>
+            </label>
+            <label>Max reviews
+              <input name="maxReviews" type="number" min="1" max="5" value="5" />
+            </label>
+            <label>Accent color
+              <span class="row">
+                <input name="accentColor" type="color" value="#1a73e8" />
+                <label class="check"><input id="use-brand-color" type="checkbox" checked /> Use brand color</label>
+              </span>
+            </label>
+            <label class="check"><input name="showReviewButton" type="checkbox" checked /> Show “Write a review” button</label>
+
+            <div class="span-2 actions">
+              <button type="submit">Save widget</button>
+              <p id="form-error" class="error" role="alert"></p>
+            </div>
+          </form>
+
+          <div id="widget-output" hidden>
+            <h3>Embed code</h3>
+            <p class="muted">Paste this into the client's website (any CMS that accepts HTML).</p>
+            <div class="copy-row"><pre id="embed-code"></pre><button class="ghost" data-copy="embed-code">Copy</button></div>
+
+            <h3>Review request link</h3>
+            <p class="muted">Send this in follow-up emails, SMS or print it as a QR code. It opens the Google review form.</p>
+            <div class="copy-row"><pre id="review-link"></pre><button class="ghost" data-copy="review-link">Copy</button></div>
+
+            <div class="section-head">
+              <h3>Live preview</h3>
+              <button id="refresh-reviews" class="ghost" title="Fetch fresh reviews from Google">Refresh reviews</button>
+            </div>
+            <div id="preview" class="preview"></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>White-label branding</h2>
+          <p class="muted">Shown in the widget footer on every client site. Hide it completely for a fully unbranded widget.</p>
+          <form id="branding-form" class="grid-form">
+            <label>Brand name <input name="brandName" maxlength="100" /></label>
+            <label>Brand color <input name="primaryColor" type="color" /></label>
+            <label class="span-2">Logo URL <input name="logoUrl" type="url" placeholder="https://…" /></label>
+            <label>Footer text <input name="poweredByText" maxlength="100" placeholder="Powered by Your Agency" /></label>
+            <label>Footer link <input name="poweredByUrl" type="url" placeholder="https://your-agency.com" /></label>
+            <label class="check span-2"><input name="hidePoweredBy" type="checkbox" /> Hide footer branding (fully white-label)</label>
+            <div class="span-2 actions">
+              <button type="submit">Save branding</button>
+              <p id="branding-status" class="muted" role="status"></p>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <script src="/widget.js"></script>
+    <script src="admin.js" type="module"></script>
+  </body>
+</html>

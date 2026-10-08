@@ -1,0 +1,139 @@
+import assert from 'node:assert/strict';
+import { after, before, beforeEach, describe, it } from 'node:test';
+import { createApp } from '../src/app.js';
+import { DemoPlacesClient } from '../src/demo.js';
+import { ReviewService } from '../src/reviews.js';
+import { Store } from '../src/store.js';
+
+describe('HTTP API', () => {
+  let server;
+  let baseUrl;
+  let store;
+  let apiKey;
+  let otherKey;
+
+  before(async () => {
+    store = new Store(null);
+    ({ apiKey } = store.createAgency('Acme Local'));
+    ({ apiKey: otherKey } = store.createAgency('Rival Agency'));
+    const reviews = new ReviewService(new DemoPlacesClient());
+    const app = createApp({ store, reviews, config: { publicUrl: 'https://widgets.example', demoMode: true } });
+    server = app.listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  after(() => server.close());
+
+  beforeEach(() => {
+    store.data.widgets = [];
+  });
+
+  const call = (path, { key = apiKey, method = 'GET', body } = {}) =>
+    fetch(`${baseUrl}${path}`, {
+      method,
+      redirect: 'manual',
+      headers: {
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+  const createWidget = async (fields = {}) => {
+    const res = await call('/api/admin/widgets', { method: 'POST', body: { placeId: 'demo-place', ...fields } });
+    assert.equal(res.status, 201);
+    return (await res.json()).widget;
+  };
+
+  it('rejects admin requests without a valid API key', async () => {
+    assert.equal((await call('/api/admin/me', { key: null })).status, 401);
+    assert.equal((await call('/api/admin/me', { key: 'rk_wrong' })).status, 401);
+  });
+
+  it('creates a widget with defaults, embed code and review link', async () => {
+    const widget = await createWidget({ name: 'Main St' });
+    assert.equal(widget.layout, 'grid');
+    assert.equal(widget.minRating, 4);
+    assert.equal(widget.reviewLink, `https://widgets.example/r/${widget.id}`);
+    assert.match(widget.embedCode, new RegExp(`data-review-widget="${widget.id}"`));
+    assert.match(widget.embedCode, /https:\/\/widgets\.example\/widget\.js/);
+  });
+
+  it('validates widget input', async () => {
+    const bad = [
+      {},
+      { placeId: 'x', layout: 'spiral' },
+      { placeId: 'x', minRating: 9 },
+      { placeId: 'x', accentColor: 'red;}' },
+      { placeId: 'x', hacker: true },
+    ];
+    for (const body of bad) {
+      const res = await call('/api/admin/widgets', { method: 'POST', body });
+      assert.equal(res.status, 400, JSON.stringify(body));
+    }
+  });
+
+  it('serves public widget data filtered by rating, with CORS', async () => {
+    const widget = await createWidget({ minRating: 5, maxReviews: 2 });
+    const res = await call(`/api/public/widgets/${widget.id}`, { key: null });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('access-control-allow-origin'), '*');
+    const data = await res.json();
+    assert.equal(data.reviews.length, 2);
+    assert.ok(data.reviews.every((r) => r.rating === 5));
+    assert.equal(data.place.reviewLink, `https://widgets.example/r/${widget.id}`);
+    assert.equal(data.widget.accentColor, '#1a73e8', 'falls back to agency brand color');
+    assert.equal(data.branding.poweredByText, 'Powered by Acme Local');
+    assert.equal(data.widget.agencyId, undefined, 'does not leak internal fields');
+  });
+
+  it('hides footer branding when white-labeled', async () => {
+    const widget = await createWidget();
+    const put = await call('/api/admin/branding', {
+      method: 'PUT',
+      body: { hidePoweredBy: true, logoUrl: 'https://acme.example/logo.png' },
+    });
+    assert.equal(put.status, 200);
+    const data = await (await call(`/api/public/widgets/${widget.id}`, { key: null })).json();
+    assert.equal(data.branding.poweredByText, '');
+    assert.equal(data.branding.logoUrl, '');
+    await call('/api/admin/branding', { method: 'PUT', body: { hidePoweredBy: false } });
+  });
+
+  it('rejects non-http logo URLs', async () => {
+    const res = await call('/api/admin/branding', { method: 'PUT', body: { logoUrl: 'javascript:alert(1)' } });
+    assert.equal(res.status, 400);
+  });
+
+  it('redirects review links to the Google review form', async () => {
+    const widget = await createWidget();
+    const res = await call(`/r/${widget.id}`, { key: null });
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get('location'), 'https://search.google.com/local/writereview?placeid=demo-place');
+  });
+
+  it("does not let an agency see or change another agency's widgets", async () => {
+    const widget = await createWidget();
+    const list = await (await call('/api/admin/widgets', { key: otherKey })).json();
+    assert.equal(list.widgets.length, 0);
+    const patch = await call(`/api/admin/widgets/${widget.id}`, { key: otherKey, method: 'PATCH', body: { layout: 'list' } });
+    assert.equal(patch.status, 404);
+    const del = await call(`/api/admin/widgets/${widget.id}`, { key: otherKey, method: 'DELETE' });
+    assert.equal(del.status, 404);
+    assert.ok(store.getWidget(widget.id));
+  });
+
+  it('updates and deletes a widget', async () => {
+    const widget = await createWidget();
+    const patch = await call(`/api/admin/widgets/${widget.id}`, { method: 'PATCH', body: { layout: 'carousel' } });
+    assert.equal((await patch.json()).widget.layout, 'carousel');
+    assert.equal((await call(`/api/admin/widgets/${widget.id}`, { method: 'DELETE' })).status, 204);
+    assert.equal((await call(`/api/public/widgets/${widget.id}`, { key: null })).status, 404);
+  });
+
+  it('searches places', async () => {
+    const data = await (await call('/api/admin/places/search?q=Smile%20Dental')).json();
+    assert.equal(data.places[0].name, 'Smile Dental');
+  });
+});
