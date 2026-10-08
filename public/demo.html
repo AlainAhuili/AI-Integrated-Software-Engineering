@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Widget demo page</title>
+    <style>
+      body { margin: 0; font: 16px/1.6 Georgia, serif; background: #fbfaf7; color: #222; }
+      .wrap { max-width: 900px; margin: 0 auto; padding: 40px 16px; }
+      h1 { font-size: 34px; margin: 0 0 8px; }
+      p { margin: 0 0 24px; }
+      code { background: #eee; padding: 2px 6px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>A client's website</h1>
+      <p>This page simulates a client site. Open it as <code>/demo.html?id=YOUR_WIDGET_ID</code>.
+        The widget below is isolated in a Shadow DOM, so this page's serif fonts and styles do not leak into it.</p>
+      <div id="slot"></div>
+    </div>
+    <script>
+      var id = new URLSearchParams(location.search).get('id');
+      if (id) {
+        document.getElementById('slot').setAttribute('data-review-widget', id);
+      } else {
+        document.getElementById('slot').textContent = 'Add ?id=YOUR_WIDGET_ID to the URL.';
+      }
+    </script>
+    <script src="/widget.js" async></script>
+  </body>
+</html>
